@@ -396,7 +396,7 @@ st.title("중고 애플 기기 가격 예측")
 # ===== 사이드바: 기기 선택 + 입력 =====
 with st.sidebar:
     st.header("기기 선택")
-    device = st.selectbox("기기", ['아이패드', '아이폰', '맥북'], key='device_select')
+    device = st.selectbox("기기", ['아이폰', '아이패드', '맥북'], key='device_select')
 
     if device == '아이패드':
         st.markdown("---")
