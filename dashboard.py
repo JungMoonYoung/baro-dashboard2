@@ -317,7 +317,7 @@ LAUNCH_PRICES = {
 @st.cache_resource
 def load_ipad_model():
     path = 'data/아이패드/'
-    df = pd.read_excel(path + '데이터/아이패드_최종_데이터셋.xlsx')
+    df = pd.read_excel(path + '아이패드_최종_데이터셋.xlsx')
     df = df.dropna(subset=['price', '출시가', '경과년수', 'storage_gb', 'size'])
     df = df[df['경과년수'] > 0]
 
@@ -382,7 +382,7 @@ model, CAT_MAP_DEP, GEN_ORDER, SRC_MAP, features, valid_data, smooth_curves = lo
 @st.cache_resource
 def load_current_price_model():
     path = 'data/아이패드/'
-    df = pd.read_excel(path + '데이터/아이패드_최종_데이터셋.xlsx')
+    df = pd.read_excel(path + '아이패드_최종_데이터셋.xlsx')
     desc_df = df[df['description'].notna()].copy()
 
     def parse_vars(text):
