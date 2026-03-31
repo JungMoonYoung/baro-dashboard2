@@ -316,7 +316,7 @@ LAUNCH_PRICES = {
 
 @st.cache_resource
 def load_ipad_model():
-    path = 'C:/claude/FINAL_PROJECT/data/분석결과/'
+    path = 'data/아이패드/'
     df = pd.read_excel(path + '데이터/아이패드_최종_데이터셋.xlsx')
     df = df.dropna(subset=['price', '출시가', '경과년수', 'storage_gb', 'size'])
     df = df[df['경과년수'] > 0]
@@ -381,7 +381,7 @@ model, CAT_MAP_DEP, GEN_ORDER, SRC_MAP, features, valid_data, smooth_curves = lo
 # ===== 현재시세 예측 모델 (모델 2) =====
 @st.cache_resource
 def load_current_price_model():
-    path = 'C:/claude/FINAL_PROJECT/data/분석결과/'
+    path = 'data/아이패드/'
     df = pd.read_excel(path + '데이터/아이패드_최종_데이터셋.xlsx')
     desc_df = df[df['description'].notna()].copy()
 
@@ -1160,7 +1160,7 @@ elif device == "맥북":
     # =========================================================
     # @st.cache_resource: RF + XGB 모델 학습 (Cell 1 로직 그대로)
     # =========================================================
-    MAC_DATA_PATH = 'C:/claude/FINAL_PROJECT/data/분석결과/데이터/맥북/'
+    MAC_DATA_PATH = 'data/맥북/'
 
     @st.cache_resource
     def load_macbook_models():
@@ -1655,7 +1655,7 @@ if device == '아이폰':
     # ===== 아이폰 통합 모델: XGBoost PriceNet (price_predict3_dash.ipynb + margin1.ipynb) =====
     @st.cache_resource
     def load_iphone_models():
-        path = 'C:/claude/FINAL_PROJECT/data/분석결과/데이터/아이폰/'
+        path = 'data/아이폰/'
 
         def load_csv(p):
             for enc in ['utf-8-sig', 'cp949', 'euc-kr', 'utf-8', 'latin1']:
