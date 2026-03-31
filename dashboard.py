@@ -316,153 +316,18 @@ LAUNCH_PRICES = {
 
 @st.cache_resource
 def load_ipad_model():
-    path = 'data/아이패드/'
-    df = pd.read_excel(path + '아이패드_최종_데이터셋.xlsx')
-    df = df.dropna(subset=['price', '출시가', '경과년수', 'storage_gb', 'size'])
-    df = df[df['경과년수'] > 0]
-
-    # 타겟: 감가율 (로그 없이 그대로)
-    df['target'] = df['price'] / df['출시가']
-
-    # IQR 이상치 제거 (카테고리별, 감가율 기준)
-    clean_dfs = []
-    for cat in ['pro', 'air', 'basic', 'mini']:
-        sub = df[df['category_re'] == cat].copy()
-        Q1 = sub['target'].quantile(0.25)
-        Q3 = sub['target'].quantile(0.75)
-        IQR = Q3 - Q1
-        filtered = sub[(sub['target'] > Q1 - 1.5*IQR) & (sub['target'] < Q3 + 1.5*IQR)]
-        clean_dfs.append(filtered)
-    df = pd.concat(clean_dfs, ignore_index=True)
-
-    # 잔존가치 필터
-    valid = df[(df['target'] > 0.1) & (df['target'] < 1.0)].copy()
-    valid['잔존가치율'] = (valid['price'] / valid['출시가']) * 100
-
-    # 수동 매핑 (가격순/서열 반영)
-    CAT_MAP_DEP = {'basic': 0, 'mini': 1, 'air': 2, 'pro': 3}
-    GEN_ORDER = {
-        '1세대':1, '2세대':2, '3세대':3, '4세대':4, '5세대':5, '6세대':6, '7세대':7,
-        '8세대':8, '9세대':9, '10세대':10, '11세대':11,
-        'm1':12, 'm2':13, 'm3':14, 'm4':15, 'm5':16, 'a17':17
-    }
-    SRC_MAP = {'위플레닛': 0, '중고나라': 1, '번개장터': 2}
-
-    valid['gen_encoded'] = valid['generation'].map(GEN_ORDER).fillna(max(GEN_ORDER.values())).astype(int)
-    valid['cat_encoded'] = valid['category_re'].map(CAT_MAP_DEP).fillna(max(CAT_MAP_DEP.values())).astype(int)
-    valid['src_encoded'] = valid['source'].map(SRC_MAP).fillna(1).astype(int)
-    valid['conn_encoded'] = (valid['connectivity'] == 'cellular').astype(int)
-
-    features = ['경과년수', 'storage_gb', 'size', '출시가', 'gen_encoded', 'conn_encoded', 'cat_encoded', 'src_encoded']
-    X = valid[features]
-    y = valid['target']
-    model = RandomForestRegressor(n_estimators=100, random_state=42, max_depth=10)
-    model.fit(X, y)
-
-    # 카테고리별 부드러운 잔존가치율 곡선
-    smooth_curves = {}
-    for cat in ['pro', 'air', 'basic', 'mini']:
-        sub = valid[valid['category_re'] == cat].copy()
-        sub['yr_round'] = (sub['경과년수'] * 2).round() / 2
-        curve = sub.groupby('yr_round')['잔존가치율'].mean().sort_index()
-        if len(curve) >= 2:
-            years_arr = curve.index.values
-            ratio_arr = curve.values
-            for i in range(1, len(ratio_arr)):
-                if ratio_arr[i] > ratio_arr[i-1]:
-                    ratio_arr[i] = ratio_arr[i-1]
-            f = interp1d(years_arr, ratio_arr, kind='linear', fill_value='extrapolate')
-            smooth_curves[cat] = f
-
-    return model, CAT_MAP_DEP, GEN_ORDER, SRC_MAP, features, valid, smooth_curves
+    import joblib
+    d = joblib.load('models/ipad_dep_model.pkl')
+    return d['model'], d['CAT_MAP_DEP'], d['GEN_ORDER'], d['SRC_MAP'], d['features'], d['valid'], d['smooth_curves']
 
 model, CAT_MAP_DEP, GEN_ORDER, SRC_MAP, features, valid_data, smooth_curves = load_ipad_model()
 
 # ===== 현재시세 예측 모델 (모델 2) =====
 @st.cache_resource
 def load_current_price_model():
-    path = 'data/아이패드/'
-    df = pd.read_excel(path + '아이패드_최종_데이터셋.xlsx')
-    desc_df = df[df['description'].notna()].copy()
-
-    def parse_vars(text):
-        text = str(text)
-        미개봉 = 1 if re.search(r'미개봉|새상품|새제품|미사용|씰미개봉', text) else 0
-        # 기스 (0=없음, 1=미세기스, 2=생활기스, 3=기스심함)
-        if re.search(r'기스\s?(없|no|x)|무기스', text):
-            기스 = 0
-        elif re.search(r'기스\s?심|많은\s?기스|기스\s?많|기스가\s?많|기스\s?좀\s?있', text):
-            기스 = 3
-        elif re.search(r'생활\s?기스|잔기스|사용감\s?있', text):
-            기스 = 2
-        elif re.search(r'미세\s?기스|약간\s?기스|살짝\s?기스|사용감\s?(없|적|거의)', text):
-            기스 = 1
-        elif re.search(r'기스', text):
-            기스 = 2
-        else:
-            기스 = 0
-        # 풀박스 (0=본체만, 1=박스있음, 2=풀박스)
-        if re.search(r'풀박스|풀박|풀셋|전부\s?포함|모두\s?포함|구성품\s?전부', text):
-            풀박스 = 2
-        elif re.search(r'박스\s?있|박스\s?포함|박스\s?동봉', text):
-            풀박스 = 1
-        else:
-            풀박스 = 0
-        return pd.Series([미개봉, 기스, 풀박스])
-
-    def parse_battery(text):
-        text = str(text)
-        match = re.search(r'(?:배터리|효율|성능|배[터텨]리|베터리|벧터리)\s*:?\s*(\d{2,3})\s*%?', text)
-        if match:
-            val = int(match.group(1))
-            if 50 <= val <= 100:
-                return val
-        return np.nan
-
-    def estimate_battery(row):
-        if pd.notna(row['battery_pct']):
-            return row['battery_pct']
-        years = row.get('경과년수', 3)
-        if pd.isna(years):
-            years = 3
-        return max(100 - (years * 4), 70)
-
-    desc_df[['미개봉', '기스', '풀박스']] = desc_df['description'].apply(parse_vars)
-    desc_df['battery_pct'] = desc_df['description'].apply(parse_battery)
-    desc_df['battery_final'] = desc_df.apply(estimate_battery, axis=1)
-
-    desc_df['출시일_dt'] = pd.to_datetime(desc_df['출시일'], errors='coerce')
-    desc_df['경과년수_현재'] = (CURRENT_DATE - desc_df['출시일_dt']).dt.days / 365.25
-    desc_df = desc_df.dropna(subset=['경과년수_현재', '출시가', 'price'])
-
-    desc_df['감가액'] = desc_df['출시가'] - desc_df['price']
-
-    CAT_MAP = {'basic': 0, 'mini': 1, 'air': 2, 'pro': 3}
-    CONN_MAP = {'wifi': 0, 'cellular': 1}
-    desc_df['cat_encoded'] = desc_df['category_re'].map(CAT_MAP)
-    desc_df['conn_encoded'] = desc_df['connectivity'].map(CONN_MAP)
-    desc_df['gen_encoded'] = desc_df['generation'].str.extract(r'(\d+)').astype(float)
-    desc_df = desc_df.dropna(subset=['cat_encoded', 'conn_encoded', 'gen_encoded'])
-
-    cp_features = [
-        '경과년수_현재', '출시가', 'cat_encoded', 'gen_encoded', 'conn_encoded',
-        'storage_gb', 'battery_final', '미개봉', '기스', '풀박스'
-    ]
-
-    # 경과년수_현재(1), 출시가(1), cat_encoded(0), gen_encoded(0), conn_encoded(0),
-    # storage_gb(0), battery_final(-1), 미개봉(-1), 기스(1), 풀박스(-1)
-    MONOTONE_CONSTRAINTS = (1, 1, 0, 0, 0, 0, -1, -1, 1, -1)
-
-    X = desc_df[cp_features]
-    y = desc_df['감가액']
-
-    cp_model = XGBRegressor(
-        n_estimators=500, max_depth=8, learning_rate=0.05,
-        monotone_constraints=MONOTONE_CONSTRAINTS, random_state=42
-    )
-    cp_model.fit(X, y)
-
-    return cp_model, cp_features, CAT_MAP, CONN_MAP
+    import joblib
+    d = joblib.load('models/ipad_cp_model.pkl')
+    return d['model'], d['cp_features'], d['CAT_MAP'], d['CONN_MAP']
 
 cp_model, cp_features, CAT_MAP, CONN_MAP = load_current_price_model()
 
@@ -1164,112 +1029,9 @@ elif device == "맥북":
 
     @st.cache_resource
     def load_macbook_models():
-        from xgboost import XGBRegressor
-
-        # ----- RF 학습 -----
-        rf_train = pd.read_csv(MAC_DATA_PATH + 'macbook_감가상각용_제품정보.csv')
-        rf_train = rf_train.dropna(subset=["price", "release_price", "release_year"]).copy()
-
-        rf_train["ram_gb"] = rf_train["ram"].apply(convert_to_gb)
-        rf_train["storage_gb"] = rf_train["storage"].apply(convert_to_gb)
-        rf_train["ram_gb"] = rf_train["ram_gb"].fillna(rf_train["ram_gb"].median())
-        rf_train["storage_gb"] = rf_train["storage_gb"].fillna(rf_train["storage_gb"].median())
-        rf_train["inch"] = pd.to_numeric(rf_train["inch"], errors="coerce")
-        rf_train["inch"] = rf_train["inch"].fillna(rf_train["inch"].median())
-
-        rf_train[["chip_gen", "chip_tier"]] = rf_train["chip"].apply(
-            lambda x: pd.Series(extract_chip_info(x))
-        )
-        rf_train["ram_level"] = rf_train["ram_gb"].apply(ram_bucket)
-
-        rf_train = rf_train[
-            (rf_train["price"] >= 300000) & (rf_train["price"] <= 7000000)
-        ].copy()
-        rf_train["target"] = rf_train["price"] / rf_train["release_price"]
-        rf_train = rf_train[(rf_train["target"] > 0.3) & (rf_train["target"] < 1.0)].copy()
-        rf_train["target_log"] = np.log(rf_train["target"])
-
-        rf_train["price_segment"] = pd.cut(
-            rf_train["release_price"],
-            bins=[0, 1600000, 2000000, 3000000, 4500000, 7000000],
-            labels=[0, 1, 2, 3, 4]
-        )
-        rf_train["model"] = rf_train["model"].str.lower().fillna("unknown")
-        rf_train = pd.get_dummies(rf_train, columns=["price_segment", "model"], drop_first=True)
-
-        rf_features = [
-            "ram_level", "storage_gb", "inch", "chip_gen", "chip_tier"
-        ] + [col for col in rf_train.columns if col.startswith("model_")] + \
-            [col for col in rf_train.columns if col.startswith("price_segment_")]
-
-        rf_train = rf_train.replace([np.inf, -np.inf], np.nan)
-        rf_train_clean = rf_train.dropna(subset=rf_features + ["target_log"]).copy()
-
-        X_rf = rf_train_clean[rf_features]
-        y_rf = rf_train_clean["target_log"]
-
-        X_train_rf, X_test_rf, y_train_rf, y_test_rf = train_test_split(
-            X_rf, y_rf, test_size=0.2, random_state=42
-        )
-
-        rf_model = RandomForestRegressor(
-            n_estimators=300, max_depth=7, min_samples_leaf=5,
-            random_state=42, n_jobs=-1
-        )
-        rf_model.fit(X_train_rf, y_train_rf)
-
-        # 30% 이상 오차 제거 후 재학습
-        train_pred_log_rf = rf_model.predict(X_train_rf)
-        train_actual_price_rf = np.exp(y_train_rf) * rf_train_clean.loc[X_train_rf.index, "release_price"]
-        train_pred_price_rf = np.exp(train_pred_log_rf) * rf_train_clean.loc[X_train_rf.index, "release_price"]
-        train_error_rate_rf = np.abs(train_actual_price_rf - train_pred_price_rf) / train_actual_price_rf
-        train_mask_rf = train_error_rate_rf < 0.3
-        rf_model.fit(X_train_rf[train_mask_rf], y_train_rf[train_mask_rf])
-
-        # RF 평가
-        y_pred_log_rf = rf_model.predict(X_test_rf)
-        price_real_rf = np.exp(y_test_rf) * rf_train_clean.loc[X_test_rf.index, "release_price"]
-        price_pred_rf = np.exp(y_pred_log_rf) * rf_train_clean.loc[X_test_rf.index, "release_price"]
-        rf_r2 = r2_score(price_real_rf, price_pred_rf)
-        rf_mae = mean_absolute_error(price_real_rf, price_pred_rf)
-
-        # ----- XGB 학습 -----
-        xgb_train = pd.read_csv(MAC_DATA_PATH + 'macbook_가격가감용_상품상태_감가상각완료.csv').copy()
-        for col in ["price", "predicted_price", "battery_health", "unseal", "fullbox"]:
-            xgb_train[col] = pd.to_numeric(xgb_train[col], errors="coerce")
-        xgb_train["unseal"] = xgb_train["unseal"].fillna(0).astype(int)
-        xgb_train["fullbox"] = xgb_train["fullbox"].fillna(0).astype(int)
-        xgb_train = xgb_train.dropna(subset=["price", "predicted_price", "battery_health", "fault_level"]).copy()
-
-        xgb_train["price_ratio"] = xgb_train["price"] / xgb_train["predicted_price"]
-        xgb_train = xgb_train[(xgb_train["price_ratio"] > 0.5) & (xgb_train["price_ratio"] < 1.5)].copy()
-        xgb_train["log_ratio"] = np.log(xgb_train["price_ratio"])
-        xgb_train["log_ratio"] = xgb_train["log_ratio"].clip(-0.5, 0.5)
-
-        xgb_train["battery_group"] = xgb_train["battery_health"].apply(get_battery_group)
-        xgb_train = pd.get_dummies(xgb_train, columns=["battery_group", "fault_level"], drop_first=False)
-
-        xgb_features = [
-            "unseal", "fullbox"
-        ] + [col for col in xgb_train.columns if col.startswith("battery_group_")] + \
-            [col for col in xgb_train.columns if col.startswith("fault_level_")]
-
-        xgb_train_clean = xgb_train.dropna(subset=xgb_features + ["log_ratio"]).copy()
-        X_xgb = xgb_train_clean[xgb_features]
-        y_xgb = xgb_train_clean["log_ratio"]
-
-        X_train_xgb, X_test_xgb, y_train_xgb, y_test_xgb = train_test_split(
-            X_xgb, y_xgb, test_size=0.2, random_state=42
-        )
-
-        xgb_model = XGBRegressor(
-            n_estimators=1000, learning_rate=0.05, max_depth=3,
-            min_child_weight=5, subsample=0.8, colsample_bytree=0.8,
-            random_state=42, n_jobs=-1
-        )
-        xgb_model.fit(X_train_xgb, y_train_xgb)
-
-        return rf_model, rf_features, rf_r2, rf_mae, xgb_model, xgb_features
+        import joblib
+        d = joblib.load('models/macbook_models.pkl')
+        return d['rf_model'], d['rf_features'], d['rf_r2'], d['rf_mae'], d['xgb_model'], d['xgb_features']
 
     mac_rf_model, mac_rf_features, mac_rf_r2, mac_rf_mae, mac_xgb_model, mac_xgb_features = load_macbook_models()
 
@@ -1652,101 +1414,12 @@ if device == '아이폰':
     </div>
     """, unsafe_allow_html=True)
 
-    # ===== 아이폰 통합 모델: XGBoost PriceNet (price_predict3_dash.ipynb + margin1.ipynb) =====
+    # ===== 아이폰 통합 모델: XGBoost PriceNet (pkl 로드) =====
     @st.cache_resource
     def load_iphone_models():
-        path = 'data/아이폰/'
-
-        def load_csv(p):
-            for enc in ['utf-8-sig', 'cp949', 'euc-kr', 'utf-8', 'latin1']:
-                try: return pd.read_csv(p, encoding=enc)
-                except: continue
-            return None
-
-        df_m = load_csv(path + '0325_iphone data.csv')
-        # (2).csv 우선 사용 (출시날짜 포함 최신 파일)
-        df_r = load_csv(path + 'iphone released price (2).csv')
-        if df_r is None:
-            df_r = load_csv(path + 'iphone released price.csv')
-        if df_r is None:
-            df_r = load_csv(path + 'iphone released price (1).csv')
-        if df_r is None:
-            return None, None, None, None, None, 0, 0, 0
-
-        df_m.columns = df_m.columns.str.strip()
-        df_r.columns = df_r.columns.str.strip()
-
-        # 컬럼 정규화
-        if '모델명' not in df_r.columns:
-            df_r.columns = ['시리즈', '모델명', '용량', '공식출시가(원)', '한국 출시일']
-
-        # 빈 행 제거 (CSV 중간에 빈 행이 있을 경우 NaN 방지)
-        df_r = df_r.dropna(subset=['모델명', '용량', '공식출시가(원)']).reset_index(drop=True)
-
-        # SE 4세대만 제외 (SE 1·2·3세대는 유지)
-        df_r = df_r[~(
-            df_r['시리즈'].astype(str).str.contains(r'SE 4', na=False) |
-            df_r['모델명'].astype(str).str.contains(r'SE \(4', na=False)
-        )].reset_index(drop=True)
-
-        # SE 모델명 깨짐 복원: "iPhone SE (1?��?)" → "iPhone SE (1세대)" 형태로 정규화
-        def fix_se_name(name):
-            name = str(name)
-            m = re.match(r'iPhone SE \((\d+)', name)
-            if m:
-                return f"iPhone SE ({m.group(1)}세대)"
-            return name
-        df_r['모델명'] = df_r['모델명'].apply(fix_se_name)
-
-        # 출시일 기준 내림차순 정렬 (최신 모델이 위로)
-        df_r['한국 출시일'] = pd.to_datetime(df_r['한국 출시일'], errors='coerce')
-        df_r = df_r.sort_values('한국 출시일', ascending=False).reset_index(drop=True)
-
-        def extract_features(row):
-            text = str(row.get('description', '')) + " " + str(row.get('title', ''))
-            is_brand_new = 1 if re.search(r'미개봉|씰미개봉', text) else 0
-            is_simple_open = 1 if (re.search(r'단순개봉|박스채', text) and not is_brand_new) else 0
-            has_crack = 1 if re.search(r'깨짐|파손|박살|금갔', text) else 0
-            has_burn_in = 1 if re.search(r'번인|잔상|멍', text) else 0
-            has_dent = 1 if re.search(r'찍힘|까짐|흠집', text) else 0
-            has_scratch = 1 if re.search(r'기스|스크래치|생활감', text) else 0
-            bat = re.search(r'배터리\s*(?:효율)?\s*(\d+)', text)
-            battery = float(bat.group(1)) if bat else 85.0
-            is_unoff = 1 if re.search(r'사설|자가수리', text) else 0
-            has_apc = 1 if re.search(r'애플케어|애케플', text, re.I) else 0
-            return pd.Series([battery, is_brand_new, is_simple_open, has_crack, has_burn_in, has_dent, has_scratch, is_unoff, has_apc])
-
-        df_merged = pd.merge(df_m, df_r, left_on=['model', 'storage'], right_on=['모델명', '용량'], how='inner')
-        expanded_cols = ['battery_health', 'is_brand_new', 'is_simple_open', 'has_crack', 'has_burn_in',
-                         'has_dent', 'has_scratch', 'is_unofficial', 'has_applecare']
-        df_merged[expanded_cols] = df_merged.apply(extract_features, axis=1)
-
-        current_date = datetime(2026, 3, 20)
-        df_merged['price'] = df_merged['price'].astype(str).str.replace(r'[^0-9]', '', regex=True).astype(float)
-        df_merged['공식출시가(원)'] = df_merged['공식출시가(원)'].astype(str).str.replace(r'[^0-9]', '', regex=True).astype(float)
-        df_merged['한국 출시일'] = pd.to_datetime(df_merged['한국 출시일'], errors='coerce')
-        df_merged['months_old'] = ((current_date - df_merged['한국 출시일']).dt.days // 30).clip(lower=0)
-        df_merged['storage_num'] = df_merged['storage'].str.extract(r'(\d+)').astype(float)
-        df_merged['is_high_end'] = df_merged['model'].str.contains('Pro|Max', case=False).astype(int)
-        df_merged['usage_intensity'] = (100 - df_merged['battery_health']) / (df_merged['months_old'] + 1)
-
-        features = ['공식출시가(원)', 'months_old', 'storage_num', 'is_high_end', 'usage_intensity',
-                    'is_brand_new', 'is_simple_open', 'has_crack', 'has_burn_in', 'has_dent', 'has_scratch',
-                    'is_unofficial', 'has_applecare']
-
-        df_final = df_merged[features + ['price']].dropna()
-        X = df_final[features]
-        y_log = np.log1p(df_final['price'])
-
-        X_train, X_test, y_log_train, y_log_test = train_test_split(X, y_log, test_size=0.2, random_state=42)
-        xgb_model = XGBRegressor(n_estimators=500, max_depth=6, learning_rate=0.05, random_state=42)
-        xgb_model.fit(X_train, y_log_train)
-
-        r2 = r2_score(y_log_test, xgb_model.predict(X_test))
-        mae = mean_absolute_error(np.expm1(y_log_test), np.expm1(xgb_model.predict(X_test)))
-        mape = np.mean(np.abs((np.expm1(y_log_test) - np.expm1(xgb_model.predict(X_test))) / np.expm1(y_log_test))) * 100
-
-        return xgb_model, features, df_r, r2, mae, mape
+        import joblib
+        d = joblib.load('models/iphone_model.pkl')
+        return d['model'], d['features'], d['df_r'], d['r2'], d['mae'], d['mape']
 
     xgb_model, iphone_features, df_r_iphone, iphone_r2, iphone_mae, iphone_mape = load_iphone_models()
 
