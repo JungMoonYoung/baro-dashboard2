@@ -620,38 +620,35 @@ if device == '아이패드':
             sell_price = predicted_price
             sell_label = "감가상각 시세 기준"
 
-        # 매입 전략 시나리오 선택
-        # 할인율 = 목표마진 + 운영비(10%) + 배송비(~3%) 포함 설계
-        # 보수: 목표마진 5%, 기본: 목표마진 7%, 공격: 목표마진 10%
+        # 매입 전략 시나리오 선택 (발표자료 기준)
+        # 공격=재고확보(매입가 높음), 보수=마진우선(매입가 낮음)
         SCENARIO = {
-            '보수 (재고 확보)': {'pro': 0.23, 'air': 0.25, 'mini': 0.28, 'basic': 0.30},
-            '기본 (균형)': {'pro': 0.25, 'air': 0.28, 'mini': 0.32, 'basic': 0.35},
-            '공격 (마진 우선)': {'pro': 0.28, 'air': 0.31, 'mini': 0.37, 'basic': 0.42},
-        }
-        SCENARIO_TARGET_MARGIN = {
-            '보수 (재고 확보)': 5,
-            '기본 (균형)': 7,
-            '공격 (마진 우선)': 10,
+            '공격 (재고확보)': {'pro': 0.08, 'air': 0.10, 'mini': 0.13, 'basic': 0.15},
+            '기본 (균형)': {'pro': 0.10, 'air': 0.13, 'mini': 0.17, 'basic': 0.20},
+            '보수 (마진우선)': {'pro': 0.12, 'air': 0.15, 'mini': 0.20, 'basic': 0.25},
         }
         scenario_choice = st.selectbox("매입 전략", list(SCENARIO.keys()), index=1, key='scenario')
-        scenario_discount = SCENARIO[scenario_choice].get(category, 0.28)
-        target_margin_pct = SCENARIO_TARGET_MARGIN[scenario_choice]
+        scenario_discount = SCENARIO[scenario_choice].get(category, 0.15)
 
-        # 시나리오 기반 매입가 계산 (운영비·배송비 포함 설계된 할인율)
-        최종매입가 = int(sell_price * (1 - scenario_discount))
+        # 시나리오 기반 매입가 계산
+        기본매입가 = int(sell_price * (1 - scenario_discount))
+
+        # 최소 마진 5% 보장
+        최소마진_매입상한 = int(sell_price * 0.95)
+        최종매입가 = min(기본매입가, 최소마진_매입상한)
 
         # 수리비만 입력받음
         repair_cost_m = st.number_input("수리비 (원)", min_value=0, value=0, step=10000, key='repair_cost_m')
 
-        # 운영비·배송비는 할인율에 포함되어 있으므로 표시 목적으로만 계산
+        # 운영비 = 판매가의 10% 자동 계산 / 배송비 = 8,000원 고정
         운영비_m = int(sell_price * 0.10)
         shipping_cost_m = 8000
 
-        # 총 비용 = 매입가 + 수리비 (운영비·배송비는 할인율에 포함)
-        total_cost = 최종매입가 + repair_cost_m
+        # 총 비용 = 매입가 + 운영비 + 수리비 + 배송비
+        total_cost = 최종매입가 + 운영비_m + repair_cost_m + shipping_cost_m
 
-        # 마진 = 판매 예상가 - 총 비용 - 운영비 - 배송비
-        순마진 = sell_price - total_cost - 운영비_m - shipping_cost_m
+        # 마진 = 판매 예상가 - 총 비용
+        순마진 = sell_price - total_cost
         순마진율 = (순마진 / sell_price * 100) if sell_price > 0 else 0
 
         col_m1, col_m2, col_m3 = st.columns(3)
@@ -660,17 +657,17 @@ if device == '아이패드':
         with col_m2:
             st.metric("판매 예상가", f"{sell_price:,.0f}원", help=sell_label)
         with col_m3:
-            st.metric("마진", f"{순마진:,.0f}원  (▲{순마진율:.1f}%)")
+            st.metric("마진", f"{순마진:,.0f}원  ({순마진율:.1f}%)")
 
         # 비용 상세 내역
         st.markdown("📋 **비용 상세**")
-        total_all = total_cost + 운영비_m + shipping_cost_m
         cost_df = pd.DataFrame({
-            '항목': ['매입가', '수리비', '운영비 (판매가의 10%)', '배송비 (고정)',
-                    '총 비용 합계', '판매 예상가', '마진'],
-            '금액': [f"{최종매입가:,}원", f"{repair_cost_m:,}원",
-                    f"{운영비_m:,}원", f"{shipping_cost_m:,}원",
-                    f"{total_all:,}원",
+            '항목': ['매입가', f'매입 차감 ({scenario_discount*100:.0f}%)',
+                    '운영비 (판매가의 10%)', '수리비', '배송비 (고정)', '총 비용',
+                    '판매 예상가', '마진'],
+            '금액': [f"{최종매입가:,}원", f"-{int(sell_price * scenario_discount):,}원",
+                    f"{운영비_m:,}원",
+                    f"{repair_cost_m:,}원", f"{shipping_cost_m:,}원", f"{total_cost:,}원",
                     f"{sell_price:,}원", f"{순마진:,}원 ({순마진율:.1f}%)"]
         })
         st.table(cost_df)
@@ -681,9 +678,9 @@ if device == '아이패드':
         판매가_즉시 = sell_price
         판매가_보통 = int(sell_price * 0.95)
         판매가_장기 = int(sell_price * 0.90)
-        마진_즉시 = 판매가_즉시 - total_cost - 운영비_m - shipping_cost_m
-        마진_보통 = 판매가_보통 - total_cost - int(판매가_보통 * 0.10) - shipping_cost_m
-        마진_장기 = 판매가_장기 - total_cost - int(판매가_장기 * 0.10) - shipping_cost_m
+        마진_즉시 = 판매가_즉시 - total_cost
+        마진_보통 = 판매가_보통 - total_cost
+        마진_장기 = 판매가_장기 - total_cost
         마진율_즉시 = (마진_즉시 / 판매가_즉시 * 100) if 판매가_즉시 > 0 else 0
         마진율_보통 = (마진_보통 / 판매가_보통 * 100) if 판매가_보통 > 0 else 0
         마진율_장기 = (마진_장기 / 판매가_장기 * 100) if 판매가_장기 > 0 else 0
@@ -696,7 +693,7 @@ if device == '아이패드':
         })
         st.table(inv_df)
 
-        st.caption(f"매입 전략: {scenario_choice} | 총 할인율 {scenario_discount*100:.0f}% (목표마진 {target_margin_pct}% + 운영비 10% + 배송·기타 포함)")
+        st.caption(f"매입 전략: {scenario_choice} | 매입 차감 {scenario_discount*100:.0f}% | 운영비 10% | 최소 마진 5% 보장")
 
 elif device == '아이폰':
     pass  # 아이폰 탭은 아래에서 처리
