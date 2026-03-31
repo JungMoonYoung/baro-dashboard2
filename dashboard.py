@@ -654,15 +654,13 @@ if device == '아이패드':
         순마진 = sell_price - total_cost - 운영비_m - shipping_cost_m
         순마진율 = (순마진 / sell_price * 100) if sell_price > 0 else 0
 
-        col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+        col_m1, col_m2, col_m3 = st.columns(3)
         with col_m1:
             st.metric("최종 매입가", f"{최종매입가:,.0f}원")
         with col_m2:
             st.metric("판매 예상가", f"{sell_price:,.0f}원", help=sell_label)
         with col_m3:
             st.metric("마진", f"{순마진:,.0f}원  (▲{순마진율:.1f}%)")
-        with col_m4:
-            st.metric("목표 마진율", f"{target_margin_pct}%")
 
         # 비용 상세 내역
         st.markdown("📋 **비용 상세**")
