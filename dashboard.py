@@ -735,6 +735,7 @@ elif device == "맥북":
         else: return 6
 
     def get_battery_group(battery_health):
+        """마진 시뮬레이션용 (노트북 원본 매핑)"""
         if pd.isna(battery_health):
             return np.nan
         if battery_health <= 80: return "80이하"
@@ -743,6 +744,14 @@ elif device == "맥북":
         elif battery_health <= 95: return "90~95"
         elif battery_health <= 98: return "95~98"
         else: return "98~100"
+
+    def get_battery_group_xgb(battery_health):
+        """맥북 XGB 모델용 (save_models.py 학습 시 매핑)"""
+        if pd.isna(battery_health):
+            return np.nan
+        if battery_health >= 90: return "high"
+        if battery_health >= 80: return "mid"
+        return "low"
 
     def normalize_model_type(model_value):
         if pd.isna(model_value): return "unknown"
@@ -1256,7 +1265,7 @@ elif device == "맥북":
             st.caption("XGBoost 보정 모델 — 배터리·하자·미개봉·풀박스 등 상태 요소 반영 + 악세서리·애플케어 옵션 가감 적용")
 
             # XGB 입력
-            battery_group = get_battery_group(mac_battery)
+            battery_group = get_battery_group_xgb(mac_battery)
             xgb_input = {
                 "unseal": result_dict["unseal"],
                 "fullbox": result_dict["fullbox"],
