@@ -440,7 +440,7 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-tab_home, tab_device = st.tabs(["🏠 홈", "📊 가격 예측"])
+tab_home, tab_summary, tab_device = st.tabs(["🏠 홈", "📌 SUMMARY", "📊 가격 예측"])
 
 with tab_home:
     # 히어로 섹션
@@ -575,6 +575,227 @@ with tab_home:
     <div style='text-align: center; padding: 32px 0;'>
         <p style='font-size: 1.4rem; font-weight: 800; color: #58a6ff;'>
             👆 상단의 가격 예측 탭에서 기기를 선택해보세요</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# ============================================================
+# 📌 SUMMARY 탭 — 분석가 관점 브리핑
+# ============================================================
+with tab_summary:
+    st.markdown("""
+    <div style='text-align:center; margin:24px 0 8px 0;'>
+        <h2 style='font-size:1.8rem; font-weight:900; color:#ffffff; margin-bottom:8px;'>
+            🎯 이 프로젝트, 왜 이렇게 만들었는가
+        </h2>
+        <p style='color:#8b949e; font-size:0.95rem;'>
+            "모델이 잘 돌아간다"가 아니라 "왜 이 방법을 선택했는가"를 설명합니다.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ---------- 문제 정의 + 해결 방향 ----------
+    p_col1, p_col2 = st.columns(2)
+    with p_col1:
+        st.markdown("""
+        <div style='background:#161b22; border:1px solid #30363d; border-left:4px solid #f78166;
+                    border-radius:12px; padding:22px; height:100%;'>
+            <div style='color:#f78166; font-weight:800; font-size:1.05rem; margin-bottom:10px;'>
+                🚨 문제 정의
+            </div>
+            <div style='color:#c9d1d9; font-size:0.95rem; line-height:1.75;'>
+                체계적인 기준이 없이 <b style='color:#fff;'>매입가 산정을 경험과 감에 의존</b>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with p_col2:
+        st.markdown("""
+        <div style='background:#161b22; border:1px solid #30363d; border-left:4px solid #58a6ff;
+                    border-radius:12px; padding:22px; height:100%;'>
+            <div style='color:#58a6ff; font-weight:800; font-size:1.05rem; margin-bottom:10px;'>
+                💡 해결 방향
+            </div>
+            <div style='color:#c9d1d9; font-size:0.95rem; line-height:1.75;'>
+                스펙·상태 입력 시 <b style='color:#fff;'>매입가 자동 산출</b>, <b style='color:#58a6ff;'>현장에서 설명 가능한 모델</b>로 구축.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ---------- 방법론 선택의 근거 ----------
+    st.markdown("""
+    <div style='font-size:1.2rem; font-weight:800; color:#58a6ff; margin:20px 0 12px 0;'>
+        🧭 방법론 선택의 근거
+    </div>
+    <p style='color:#8b949e; font-size:0.9rem; margin-bottom:16px;'>
+        단순히 정확도 높은 모델을 고른 게 아닙니다. 각 단계에서 <b>"왜 이 선택인가"</b>를 설명할 수 있어야 매입 담당자가 납득합니다.
+    </p>
+    """, unsafe_allow_html=True)
+
+    method_rows = [
+        ("모델 구조", "2단계 하이브리드 (감가→상태)",
+         "스펙 변화와 상태 변화를 분리해야 매입 담당자가 납득 가능"),
+        ("감가상각 (1단계)", "타겟을 감가율(중고가/출시가)로 변환",
+         "감가율로 변환 → 다양한 기종에 범용 적용 가능"),
+        ("상태 보정 (2단계)", "XGBoost + Monotone Constraints",
+         "가격 역전(기스 있는데 더 비쌈) 방지, 현장 신뢰 확보"),
+        ("상태 정보 추출", "정규표현식 파싱 → 정형 피처 12개",
+         "비정형 텍스트는 그대로 쓸 수 없음 → 모델 입력 가능 형태로 재가공"),
+        ("마진 산출 (3단계)", "전략 3개(공격/기본/보수) + 재고 시뮬레이션",
+         "고가 모델은 할인율 낮게, 저가 모델은 높게 → 실제 마진 패턴 반영"),
+    ]
+
+    th_style = (
+        "padding:14px 16px;text-align:left;"
+        "background:#1a3a5c;color:#58a6ff;"
+        "font-weight:700;font-size:0.92rem;"
+        "border-bottom:1px solid #30363d;"
+    )
+    td_label_style = (
+        "padding:14px 16px;vertical-align:top;"
+        "color:#ffffff;font-weight:700;font-size:0.92rem;"
+        "background:rgba(88,166,255,0.05);"
+        "border-bottom:1px solid #30363d;width:18%;"
+    )
+    td_pick_style = (
+        "padding:14px 16px;vertical-align:top;"
+        "color:#c9d1d9;font-size:0.92rem;line-height:1.6;"
+        "background:#161b22;"
+        "border-bottom:1px solid #30363d;width:35%;"
+    )
+    td_reason_style = (
+        "padding:14px 16px;vertical-align:top;"
+        "color:#8b949e;font-size:0.9rem;line-height:1.6;"
+        "background:#161b22;"
+        "border-bottom:1px solid #30363d;"
+    )
+
+    rows_html = ""
+    for step, pick, reason in method_rows:
+        rows_html += (
+            f'<tr>'
+            f'<td style="{td_label_style}">{step}</td>'
+            f'<td style="{td_pick_style}">{pick}</td>'
+            f'<td style="{td_reason_style}">{reason}</td>'
+            f'</tr>'
+        )
+
+    st.markdown(
+        f'<div style="border:1px solid #30363d;border-radius:12px;overflow:hidden;">'
+        f'<table style="width:100%;border-collapse:collapse;">'
+        f'<tr>'
+        f'<th style="{th_style}">단계</th>'
+        f'<th style="{th_style}">이 프로젝트 선택</th>'
+        f'<th style="{th_style}">선택 이유</th>'
+        f'</tr>'
+        f'{rows_html}'
+        f'</table></div>',
+        unsafe_allow_html=True,
+    )
+
+    st.info(
+        "💡 **핵심 교훈**: 모델 성능(R²)이 높아도 현장에서 설명이 안 되면 쓸 수 없습니다. "
+        "정확도를 소폭 양보하더라도 **비즈니스 로직에 맞는 결과**를 내는 모델이 실무에서는 더 가치 있다는 것을 배웠습니다."
+    )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ---------- 문제 해결 경험 ----------
+    st.markdown("""
+    <div style='font-size:1.2rem; font-weight:800; color:#58a6ff; margin:20px 0 12px 0;'>
+        🛠️ 문제 해결 경험
+    </div>
+    """, unsafe_allow_html=True)
+
+    e1, e2 = st.columns(2)
+    with e1:
+        st.markdown("""
+        <div style='background:#161b22; border:1px solid #30363d; border-radius:12px;
+                    padding:22px; height:100%;'>
+            <div style='color:#ffa657; font-weight:800; font-size:1rem; margin-bottom:10px;'>
+                1️⃣ 비정형 텍스트 → 정형 데이터
+            </div>
+            <div style='color:#c9d1d9; font-size:0.9rem; line-height:1.75;'>
+                <b style='color:#f78166;'>문제</b>: "미세기스 있고 배터리 92%" 같은 자유 텍스트로 기록되어 모델 입력 불가.<br><br>
+                <b style='color:#58a6ff;'>해결</b>: 정규표현식 파싱 엔진으로 배터리% · 기스 등급 · 찍힘 · 풀박스 · 미개봉 여부를 자동 추출. 결측 시 경과년수 기반 배터리 추정.<br><br>
+                <b style='color:#7ee787;'>결과</b>: 비정형 텍스트 → <b>12개 정형 피처</b>로 변환 완료.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with e2:
+        st.markdown("""
+        <div style='background:#161b22; border:1px solid #30363d; border-radius:12px;
+                    padding:22px; height:100%;'>
+            <div style='color:#ffa657; font-weight:800; font-size:1rem; margin-bottom:10px;'>
+                2️⃣ 모델 예측값의 모순 (가격 역전)
+            </div>
+            <div style='color:#c9d1d9; font-size:0.9rem; line-height:1.75;'>
+                <b style='color:#f78166;'>문제</b>: 모델이 배터리 성능 낮은 제품의 가격을 더 높게 예측. 기스 있는 제품이 깨끗한 제품보다 비쌈. 비즈니스 상식 위배.<br><br>
+                <b style='color:#58a6ff;'>해결</b>: <b>XGBoost Monotone Constraints</b> 적용. "배터리↑→가격↑", "기스↑→가격↓" 방향성을 모델에 강제.<br><br>
+                <b style='color:#7ee787;'>결과</b>: 정확도는 소폭 양보, <b>매입 담당자가 즉시 납득 가능한 모델</b> 완성.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ---------- 비즈니스 활용 방안 ----------
+    st.markdown("""
+    <div style='font-size:1.2rem; font-weight:800; color:#58a6ff; margin:20px 0 12px 0;'>
+        💼 비즈니스 활용 방안
+    </div>
+    """, unsafe_allow_html=True)
+
+    b1, b2 = st.columns(2)
+    with b1:
+        st.markdown("""
+        <div style='background:#161b22; border:1px solid #30363d; border-left:4px solid #7ee787;
+                    border-radius:12px; padding:22px; height:100%;'>
+            <div style='color:#7ee787; font-weight:800; font-size:1.05rem; margin-bottom:10px;'>
+                📦 1. 매입·매각 타이밍 판단
+            </div>
+            <div style='color:#c9d1d9; font-size:0.9rem; line-height:1.75;'>
+                <b style='color:#fff;'>매각 전략</b> — 감가 급락 타이밍 이전에 추가 할인으로 빠른 매각 유도.
+                <span style='color:#ffa657;'>현재 악성 재고 50.4% 해소 근거</span>.<br><br>
+                <b style='color:#fff;'>매입 전략</b> — 제품별 잔존가치 하락 패턴에 따라 수집 타이밍 차등화.
+                iPad Air는 3년 이후 급락 → 2년 이하 매입, MacBook M1은 감가율 완만 → 장기 보유 가능.<br><br>
+                <b style='color:#7ee787;'>기대효과</b>: 악성 재고 비율 감소 + 감가 손실 최소화.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with b2:
+        st.markdown("""
+        <div style='background:#161b22; border:1px solid #30363d; border-left:4px solid #a5d6ff;
+                    border-radius:12px; padding:22px; height:100%;'>
+            <div style='color:#a5d6ff; font-weight:800; font-size:1.05rem; margin-bottom:10px;'>
+                ⚖️ 2. 매입 현장 가격의 표준화
+            </div>
+            <div style='color:#c9d1d9; font-size:0.9rem; line-height:1.75;'>
+                <b style='color:#f78166;'>Before</b> — 담당자마다 주관적 기준으로 매입가 산정 → 불균형 발생 → 고객 신뢰 하락 · 이탈.<br><br>
+                <b style='color:#58a6ff;'>After</b> — 항목별 차감·프리미엄 기준이 확립되어 불균형 해소. <b>신입 담당자도 동일 기준으로 즉시 매입가 산정 가능</b>.<br><br>
+                <b style='color:#a5d6ff;'>기대효과</b>: 가격 산정 투명성 확보 + 교육 비용 절감 + 매입 전환율 개선.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ---------- 성장 포인트 ----------
+    st.markdown("""
+    <div style='background:linear-gradient(135deg,#1a3a5c 0%,#0d2137 100%);
+                border:1px solid #30363d; border-radius:14px; padding:24px; margin-top:12px;'>
+        <div style='color:#58a6ff; font-weight:800; font-size:1.1rem; margin-bottom:12px;'>
+            🌱 성장 포인트
+        </div>
+        <ul style='color:#c9d1d9; font-size:0.95rem; line-height:1.9; margin:0; padding-left:20px;'>
+            <li>모델은 정확도뿐 아니라 <b style='color:#fff;'>현장에서 설명 가능하고 즉시 활용 가능</b>해야 한다는 점을 기업 담당자 피드백을 통해 확인</li>
+            <li><b style='color:#fff;'>4,325건 실거래 데이터</b>의 환불·비정형 텍스트·비정상 거래를 직접 처리하며 현업 데이터와 학습용 데이터의 차이를 체감</li>
+            <li>분석의 최종 산출물은 결국 <b style='color:#fff;'>의사결정</b>이라는 점을 실무에서 확인</li>
+        </ul>
     </div>
     """, unsafe_allow_html=True)
 
