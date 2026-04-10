@@ -1,4 +1,26 @@
+# AI 도구 설정
+.claude/
+.cursor/
+
+# Python
 __pycache__/
 *.pyc
 *.pyo
+
+# 환경 변수
 .env
+.env.*
+!.env.example
+
+# 이전 버전 대시보드
+dashboard.py
+dashboard_portfolio.py
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
